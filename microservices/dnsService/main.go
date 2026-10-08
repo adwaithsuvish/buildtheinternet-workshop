@@ -5,8 +5,10 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"regexp"
+	"strings"
 	"sync"
 )
 
@@ -63,6 +65,21 @@ func lookup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"domain": domain, "destination": destination})
 }
 
+func validServiceEndpoint(raw string) bool {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return false
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.User != nil {
+		return false
+	}
+	if parsed.Path != "" && parsed.Path != "/" {
+		return false
+	}
+	return true
+}
+
 func register(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	var request registerRequest
@@ -71,10 +88,10 @@ func register(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Missing required 'domain' field"})
 		return
 	}
-	destination := r.Header.Get("X-Service-Endpoint")
-	if destination == "" {
-		host, _, _ := net.SplitHostPort(r.RemoteAddr)
-		destination = host
+	destination := strings.TrimSpace(r.Header.Get("X-Service-Endpoint"))
+	if !validServiceEndpoint(destination) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "X-Service-Endpoint must be a complete http(s) URL"})
+		return
 	}
 	registryMu.Lock()
 	registry[request.Domain] = destination
