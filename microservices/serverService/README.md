@@ -28,6 +28,8 @@ server-side session tokens in cookies.
 | `BIND_ADDRESS` | `127.0.0.1` | Listener address |
 | `PORT` | `5002` | Listener port |
 | `DNS_URL` | empty | DNS service URL |
+| `SERVICE_ENDPOINT` | empty | Complete URL registered in DNS, for example `http://192.168.1.20:5002` |
+| `CLIENT_ORIGIN` | `http://localhost:8080` | Exact browser origin allowed to use credentialed requests |
 | `DB_URL` | empty | Optional allowlisted direct DB URL |
 | `DB_ALLOWED_HOSTS` | `127.0.0.1,localhost` | Allowed DB hostnames/IPs |
 | `DB_PORT` | `5001` | Port appended to DNS destinations without a port |

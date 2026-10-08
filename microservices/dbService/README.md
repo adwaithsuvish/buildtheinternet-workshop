@@ -29,3 +29,4 @@ timeout, and per-client rate limits.
 | `INTERNAL_SERVICE_TOKEN` | none | Required shared secret from `acm-server` |
 | `DNS_URL` | empty | DNS service URL for registration |
 | `DNS_SERVICE_TOKEN` | empty | Optional shared token for an authenticated DNS service |
+| `SERVICE_ENDPOINT` | empty | Complete URL registered in DNS, for example `http://192.168.1.20:5001` |

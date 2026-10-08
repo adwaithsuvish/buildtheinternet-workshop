@@ -20,13 +20,14 @@ import (
 const maxBodyBytes = 16 * 1024
 
 type config struct {
-	bindAddress   string
-	port          string
-	database      string
-	serviceToken  string
-	dnsURL        string
-	dnsToken      string
-	serviceDomain string
+	bindAddress     string
+	port            string
+	database        string
+	serviceToken    string
+	dnsURL          string
+	dnsToken        string
+	serviceDomain   string
+	serviceEndpoint string
 }
 
 func env(key, fallback string) string {
@@ -37,15 +38,20 @@ func env(key, fallback string) string {
 }
 
 func loadConfig() config {
-	return config{
-		bindAddress:   env("BIND_ADDRESS", "127.0.0.1"),
-		port:          env("PORT", "5001"),
-		database:      env("DB_PATH", "users.db"),
-		serviceToken:  env("INTERNAL_SERVICE_TOKEN", ""),
-		dnsURL:        strings.TrimRight(os.Getenv("DNS_URL"), "/"),
-		dnsToken:      env("DNS_SERVICE_TOKEN", ""),
-		serviceDomain: env("SERVICE_DOMAIN", "acm-db"),
+	cfg := config{
+		bindAddress:     env("BIND_ADDRESS", "127.0.0.1"),
+		port:            env("PORT", "5001"),
+		database:        env("DB_PATH", "users.db"),
+		serviceToken:    env("INTERNAL_SERVICE_TOKEN", ""),
+		dnsURL:          strings.TrimRight(os.Getenv("DNS_URL"), "/"),
+		dnsToken:        env("DNS_SERVICE_TOKEN", ""),
+		serviceDomain:   env("SERVICE_DOMAIN", "acm-db"),
+		serviceEndpoint: strings.TrimRight(os.Getenv("SERVICE_ENDPOINT"), "/"),
 	}
+	if cfg.serviceEndpoint == "" && cfg.bindAddress == "127.0.0.1" {
+		cfg.serviceEndpoint = "http://127.0.0.1:" + cfg.port
+	}
+	return cfg
 }
 
 type service struct {
@@ -158,6 +164,9 @@ func registerWithDNS(cfg config) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if cfg.serviceEndpoint != "" {
+		req.Header.Set("X-Service-Endpoint", cfg.serviceEndpoint)
+	}
 	if cfg.dnsToken != "" {
 		req.Header.Set("X-DNS-Service-Token", cfg.dnsToken)
 	}

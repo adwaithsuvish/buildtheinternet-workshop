@@ -20,10 +20,9 @@
     <div class="layout">
       <section class="panel"><h2>Connection details</h2>
         <div class="field"><label for="dns">DNS service address</label><input id="dns" placeholder="http://192.168.1.10:8053" required></div>
-        <div class="field"><label for="port">Fallback server port</label><input id="port" value="8002" inputmode="numeric"></div>
         <h2>Account</h2>
         <div class="field"><label for="user">Username</label><input id="user" value="alice" autocomplete="username" required></div>
-        <div class="field"><label for="pass">Password</label><input id="pass" type="password" value="secret123" autocomplete="current-password" required></div>
+        <div class="field"><label for="pass">Password</label><input id="pass" type="password" autocomplete="current-password" required></div>
         <button id="start">Start authentication flow</button>
       </section>
       <section><div class="flow-head"><h2>Network flow</h2><span class="live">● Live events</span></div><div id="steps" class="steps"></div>
@@ -39,12 +38,12 @@
     function say(text){if(log.textContent==="Waiting to start...")log.textContent="";log.textContent+=text+"\\n"}
     async function request(url,options={}){const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),6000);try{const response=await fetch(url,{...options,signal:controller.signal});let data={};try{data=await response.json()}catch{}return{response,data}}finally{clearTimeout(timer)}}
     async function flow(){start.disabled=true;names.forEach(([id])=>mark(id,"pending"));log.textContent="";
-      const dns=document.querySelector("#dns").value.replace(/\\/$/,""),port=document.querySelector("#port").value,user=document.querySelector("#user").value,pass=document.querySelector("#pass").value;
+      const dns=document.querySelector("#dns").value.replace(/\\/$/,""),user=document.querySelector("#user").value,pass=document.querySelector("#pass").value;
       try{if(!dns||!user||!pass)throw Error("Please complete all required fields.");
         mark("dns","active");say("Looking up acm-server through acm-dns...");const lookup=await request(`${dns}/lookup?domain=acm-server`);if(!lookup.response.ok)throw Error(lookup.data.error||"DNS lookup failed");
-        let server=lookup.data.destination;if(!/^https?:\\/\\//.test(server))server="http://"+server+":"+port;mark("dns","done");say("Resolved acm-server → "+server);
-        mark("login","active");let result=await request(`${server}/login`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:user,password:pass})});
-        if(result.response.status===401){mark("login","done");mark("register","active");say("User not found; registering...");result=await request(`${server}/register`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:user,password:pass})});if(!result.response.ok&&result.response.status!==400)throw Error(result.data.error||"Registration failed");mark("register","done");mark("retry","active");say("Registration complete; retrying login...");result=await request(`${server}/login`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:user,password:pass}))}
+        const server=lookup.data.destination;if(!/^https?:\\/\\//.test(server))throw Error("DNS returned an incomplete server endpoint.");mark("dns","done");say("Resolved acm-server → "+server);
+        mark("login","active");let result=await request(`${server}/login`,{method:"POST",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:user,password:pass})});
+        if(result.response.status===401){mark("login","done");mark("register","active");say("User not found; registering...");result=await request(`${server}/register`,{method:"POST",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:user,password:pass})});if(!result.response.ok&&result.response.status!==400)throw Error(result.data.error||"Registration failed");mark("register","done");mark("retry","active");say("Registration complete; retrying login...");result=await request(`${server}/login`,{method:"POST",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:user,password:pass}))}
         if(!result.response.ok)throw Error(result.data.error||"Login failed");mark("login","done");mark("retry","done");mark("whoami","active");const who=await request(`${server}/whoami`,{credentials:"include"});if(!who.response.ok)throw Error(who.data.error||"Session verification failed");mark("whoami","done");say(`Authenticated as ${who.data.username} (user ${who.data.user_id}).`);
       }catch(error){say("❌ "+(error.name==="AbortError"?"Request timed out. Check the service address.":error.message));names.forEach(([id])=>{if(document.getElementById(id).classList.contains("active"))mark(id,"failed")})}finally{start.disabled=false}
     }

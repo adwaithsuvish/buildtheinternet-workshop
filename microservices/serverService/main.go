@@ -22,10 +22,10 @@ import (
 const maxBodyBytes = 16 * 1024
 
 type config struct {
-	bindAddress, port, dnsURL, dbURL, dbPort, serviceDomain, serviceToken string
-	dnsToken                                                              string
-	allowedDBHosts                                                        map[string]bool
-	secureCookies                                                         bool
+	bindAddress, port, dnsURL, dbURL, dbPort, serviceDomain, serviceToken, serviceEndpoint, clientOrigin string
+	dnsToken                                                                                             string
+	allowedDBHosts                                                                                       map[string]bool
+	secureCookies                                                                                        bool
 }
 
 func env(key, fallback string) string {
@@ -42,16 +42,22 @@ func loadConfig() config {
 			hosts[host] = true
 		}
 	}
-	return config{
+	cfg := config{
 		bindAddress: env("BIND_ADDRESS", "127.0.0.1"),
 		port:        env("PORT", "5002"), dnsURL: strings.TrimRight(os.Getenv("DNS_URL"), "/"),
 		dbURL: strings.TrimRight(os.Getenv("DB_URL"), "/"), dbPort: env("DB_PORT", "5001"),
-		serviceDomain:  env("SERVICE_DOMAIN", "acm-server"),
-		serviceToken:   env("INTERNAL_SERVICE_TOKEN", ""),
-		dnsToken:       env("DNS_SERVICE_TOKEN", ""),
-		allowedDBHosts: hosts,
-		secureCookies:  strings.EqualFold(env("SESSION_COOKIE_SECURE", "true"), "true"),
+		serviceDomain:   env("SERVICE_DOMAIN", "acm-server"),
+		serviceToken:    env("INTERNAL_SERVICE_TOKEN", ""),
+		dnsToken:        env("DNS_SERVICE_TOKEN", ""),
+		serviceEndpoint: strings.TrimRight(os.Getenv("SERVICE_ENDPOINT"), "/"),
+		clientOrigin:    env("CLIENT_ORIGIN", "http://localhost:8080"),
+		allowedDBHosts:  hosts,
+		secureCookies:   strings.EqualFold(env("SESSION_COOKIE_SECURE", "true"), "true"),
 	}
+	if cfg.serviceEndpoint == "" && cfg.bindAddress == "127.0.0.1" {
+		cfg.serviceEndpoint = "http://127.0.0.1:" + cfg.port
+	}
+	return cfg
 }
 
 type session struct {
@@ -71,6 +77,27 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(value)
+}
+
+func (s *service) cors(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Origin") == s.cfg.clientOrigin {
+			w.Header().Set("Access-Control-Allow-Origin", s.cfg.clientOrigin)
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			w.Header().Set("Vary", "Origin")
+		}
+		if r.Method == http.MethodOptions {
+			if r.Header.Get("Origin") != s.cfg.clientOrigin {
+				writeJSON(w, http.StatusForbidden, map[string]string{"error": "Origin not allowed"})
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, destination any) error {
@@ -303,6 +330,9 @@ func registerWithDNS(cfg config) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if cfg.serviceEndpoint != "" {
+		req.Header.Set("X-Service-Endpoint", cfg.serviceEndpoint)
+	}
 	if cfg.dnsToken != "" {
 		req.Header.Set("X-DNS-Service-Token", cfg.dnsToken)
 	}
@@ -328,7 +358,7 @@ func main() {
 	mux.HandleFunc("POST /register", s.register)
 	mux.HandleFunc("POST /login", s.login)
 	mux.HandleFunc("GET /whoami", s.whoami)
-	handler := rateLimit(maxBody(mux), 120, time.Minute)
+	handler := rateLimit(maxBody(s.cors(mux)), 120, time.Minute)
 	server := &http.Server{Addr: cfg.bindAddress + ":" + cfg.port, Handler: handler, ReadHeaderTimeout: 2 * time.Second, ReadTimeout: 5 * time.Second, WriteTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second}
 	if err := registerWithDNS(cfg); err != nil {
 		log.Fatal(err)
